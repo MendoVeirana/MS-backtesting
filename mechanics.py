@@ -23,15 +23,15 @@ def funding_btc_from_usd(notional_usd: float, price: float, funding_daily_rate: 
 def avg_entry_inverse_harmonic(q_usd_old: float, entry_old: float,
                                q_usd_add: float, fill_price: float) -> float:
     """
-    For inverse contracts, the proper averaging uses harmonic weights:
-    1/E_new = (Q_old/E_old + Q_add/E_add) / (Q_old + Q_add)
+    For inverse contracts, the correct averaging uses harmonic weights:
+        1/E_new = (Q_old/E_old + Q_add/fill_price) / (Q_old + Q_add)
     """
-    if q_usd_old <= 0:
+    if q_usd_add <= 0:
+        return entry_old if q_usd_old > 0 else fill_price
+    if q_usd_old <= 0 or entry_old <= 0:
         return fill_price
     denom = q_usd_old + q_usd_add
-    if denom <= 0:
-        return fill_price
-    inv_new = (q_usd_old/entry_old + q_usd_add/fill_price) / denom
+    inv_new = (q_usd_old / entry_old + q_usd_add / fill_price) / denom
     return 1.0 / inv_new
 
 def liquidation_price_inverse(entry_price: float,
@@ -39,16 +39,28 @@ def liquidation_price_inverse(entry_price: float,
                               wallet_btc_excl_unreal: float,
                               maintenance_margin_rate: float) -> float:
     """
-    Solve Equity_btc(p) = mm_btc(p) for inverse coin-M:
-      wallet + Q*(1/E - 1/p) = (mm_rate * Q) / p
-    => p_liq = Q*(1 - mm_rate) / (wallet + Q/E)
+    Inverse (coin-margined) liquidation price.
+
+    Solve Equity_btc(p) = mm_btc(p):
+        wallet + Q*(1/E - 1/p) = (mm_rate * Q) / p
+    =>
+        p_liq = Q * (1 + mm_rate) / (wallet + Q/E)
+
+    Notes:
+    - q_usd: USD notional (contracts); must be > 0 for a long.
+    - entry_price E in USD/BTC; must be > 0.
+    - wallet_btc_excl_unreal: wallet BTC excluding unrealized PnL (includes free + position margin).
+    - maintenance_margin_rate as a decimal (e.g., 0.005 for 0.5%).
     """
     if q_usd <= 0 or entry_price <= 0:
         return 0.0
+
     denom_btc = wallet_btc_excl_unreal + (q_usd / entry_price)
     if denom_btc <= 0:
-        return np.nan
-    return q_usd * (1.0 - maintenance_margin_rate) / denom_btc
+        # If wallet + Q/E <= 0, you are effectively insolvent; treat as immediate liquidation.
+        return float('inf')
+
+    return q_usd * (1.0 + maintenance_margin_rate) / denom_btc
 
 def liquidation_price_coin_m(entry_price: float,
                              pos_size_btc: float,
