@@ -1,12 +1,11 @@
 import numpy as np
 
-# Inverse model helpers (coin-margined BTCUSD-like)
-
 def usd_notional_from_btc_margin(margin_btc: float, price: float, leverage: float) -> float:
     """
     For inverse coin-M: with BTC margin m, leverage L, and price p, USD contracts Q = m * L * p.
     """
     return max(0.0, margin_btc) * leverage * price
+
 
 def commission_btc_from_usd(notional_usd: float, price: float, commission_rate: float) -> float:
     """
@@ -14,11 +13,13 @@ def commission_btc_from_usd(notional_usd: float, price: float, commission_rate: 
     """
     return (commission_rate * abs(notional_usd)) / price
 
+
 def funding_btc_from_usd(notional_usd: float, price: float, funding_daily_rate: float) -> float:
     """
     Funding (BTC) for inverse: funding_usd = rate * notional_usd; funding_btc = funding_usd / price.
     """
     return (funding_daily_rate * abs(notional_usd)) / price
+
 
 def avg_entry_inverse_harmonic(q_usd_old: float, entry_old: float,
                                q_usd_add: float, fill_price: float) -> float:
@@ -34,6 +35,7 @@ def avg_entry_inverse_harmonic(q_usd_old: float, entry_old: float,
     inv_new = (q_usd_old / entry_old + q_usd_add / fill_price) / denom
     return 1.0 / inv_new
 
+
 def liquidation_price_inverse(entry_price: float,
                               q_usd: float,
                               wallet_btc_excl_unreal: float,
@@ -43,24 +45,31 @@ def liquidation_price_inverse(entry_price: float,
 
     Solve Equity_btc(p) = mm_btc(p):
         wallet + Q*(1/E - 1/p) = (mm_rate * Q) / p
-    =>
-        p_liq = Q * (1 + mm_rate) / (wallet + Q/E)
+    =>  p_liq = Q * (1 + mm_rate) / (wallet + Q/E)
 
     Notes:
     - q_usd: USD notional (contracts); must be > 0 for a long.
     - entry_price E in USD/BTC; must be > 0.
-    - wallet_btc_excl_unreal: wallet BTC excluding unrealized PnL (includes free + position margin).
-    - maintenance_margin_rate as a decimal (e.g., 0.005 for 0.5%).
+    - wallet_btc_excl_unreal: total wallet for the position excluding unrealized PnL
+      (i.e., free + position margin for isolated; account equity in cross).
+    - maintenance_margin_rate as a decimal (e.g., 0.0045 for ~0.45%).
     """
     if q_usd <= 0 or entry_price <= 0:
         return 0.0
-
     denom_btc = wallet_btc_excl_unreal + (q_usd / entry_price)
     if denom_btc <= 0:
-        # If wallet + Q/E <= 0, you are effectively insolvent; treat as immediate liquidation.
+        # Effectively insolvent -> treat as immediate liquidation
         return float('inf')
-
     return q_usd * (1.0 + maintenance_margin_rate) / denom_btc
+
+
+# Optional thin wrapper to make intent clear in isolated mode (use the position's wallet)
+def liquidation_price_inverse_isolated(entry_price: float,
+                                       q_usd: float,
+                                       position_wallet_btc_excl_unreal: float,
+                                       maintenance_margin_rate: float) -> float:
+    return liquidation_price_inverse(entry_price, q_usd, position_wallet_btc_excl_unreal, maintenance_margin_rate)
+
 
 def liquidation_price_coin_m(entry_price: float,
                              pos_size_btc: float,
