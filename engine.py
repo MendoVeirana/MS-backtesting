@@ -76,44 +76,47 @@ def run_backtest(price_df: pd.DataFrame,
             fill_price = apply_slippage(c, cfg.slippage_bps, buy=True)
             open_margin = min(cfg.open_margin_pct * cfg.initial_margin_btc, free_margin)
 
-            if model == 'inverse':
-                q_add = usd_notional_from_btc_margin(open_margin, fill_price, cfg.leverage_limit)
-                commission_btc = commission_btc_from_usd(q_add, fill_price, cfg.commission_rate)
+            q_add = usd_notional_from_btc_margin(open_margin, fill_price, cfg.leverage_limit)
+            commission_btc = commission_btc_from_usd(q_add, fill_price, cfg.commission_rate)
 
-                pos_q_usd = q_add
-                pos_margin_btc += open_margin
-                avg_entry = fill_price
+            pos_q_usd = q_add
+            pos_margin_btc += open_margin
+            avg_entry = fill_price
 
-                free_margin -= (open_margin + commission_btc)
-                free_margin = max(0.0, free_margin)
+            free_margin -= (open_margin + commission_btc)
+            free_margin = max(0.0, free_margin)
 
-                wallet_btc_excl_unreal = free_margin + spot_btc + pos_margin_btc
-                start_liq_price = liquidation_price_inverse(
-                    entry_price=avg_entry,
-                    q_usd=pos_q_usd,
-                    wallet_btc_excl_unreal=wallet_btc_excl_unreal,
-                    maintenance_margin_rate=cfg.maintenance_margin_rate
-                )
+            # Fix: For isolated margin, use ONLY pos_margin_btc as W (exclude free/spot)
+            isolated_wallet_btc = pos_margin_btc  # Simulates isolated: only allocated margin backs liq
+            start_liq_price = liquidation_price_inverse(
+                entry_price=avg_entry,
+                q_usd=pos_q_usd,
+                wallet_btc_excl_unreal=isolated_wallet_btc,  # Key change: isolated W
+                maintenance_margin_rate=cfg.maintenance_margin_rate
+            )
 
-                in_cycle = True
-                starts.append(date)
-                cycles.append({
-                    'cycle': cycle_id,
-                    'start_date': date,
-                    'start_price': fill_price,
-                    'start_free_margin_btc': free_margin,
-                    'start_spot_btc': spot_btc,
-                    'start_pos_margin_btc': pos_margin_btc,
-                    'start_pos_q_usd': pos_q_usd,
-                    'start_equity_btc_excl_unreal': free_margin + spot_btc + pos_margin_btc,
-                    'start_liq_price': start_liq_price,
-                    'last_liq_price': start_liq_price
-                })
+            in_cycle = True
+            starts.append(date)
+            cycles.append({
+                'cycle': cycle_id,
+                'start_date': date,
+                'start_price': fill_price,
+                'start_free_margin_btc': free_margin,
+                'start_spot_btc': spot_btc,
+                'start_pos_margin_btc': pos_margin_btc,
+                'start_pos_q_usd': pos_q_usd,
+                'start_equity_btc_excl_unreal': free_margin + spot_btc + pos_margin_btc,  # Full for equity, but liq uses isolated
+                'start_liq_price': start_liq_price,
+                'last_liq_price': start_liq_price
+            })
 
-        # 2) Funding (debited from free margin, or pos_margin if free insufficient)
+        # 2) Funding (debited from pos_margin for isolated)
         if in_cycle:
             if model == 'inverse' and pos_q_usd > 0:
                 fee_btc = funding_btc_from_usd(pos_q_usd, c, fund_rate)
+                pos_margin_btc -= fee_btc  # Deduct directly from pos (isolated)
+                pos_margin_btc = max(0.0, pos_margin_btc)  # Prevent negative
+
                 if free_margin >= fee_btc:
                     free_margin -= fee_btc
                 else:
@@ -125,16 +128,16 @@ def run_backtest(price_df: pd.DataFrame,
 
         # 3) Pre-trade liquidation (after funding, before TP/ladder)
         liq_price_pre = 0.0
-        liq_denom_pre_btc = np.nan  # diagnostic
+        liq_denom_pre_btc = np.nan
         mm_btc_mark = 0.0
-
         if in_cycle and avg_entry is not None and model == 'inverse' and pos_q_usd > 0:
-            wallet_btc_excl_unreal = free_margin + spot_btc + pos_margin_btc
-            liq_denom_pre_btc = wallet_btc_excl_unreal + (pos_q_usd / avg_entry)
+            # Fix: Isolated - use only pos_margin_btc
+            isolated_wallet_btc = pos_margin_btc
+            liq_denom_pre_btc = isolated_wallet_btc + (pos_q_usd / avg_entry)
             liq_price_pre = liquidation_price_inverse(
                 entry_price=avg_entry,
                 q_usd=pos_q_usd,
-                wallet_btc_excl_unreal=wallet_btc_excl_unreal,
+                wallet_btc_excl_unreal=isolated_wallet_btc,
                 maintenance_margin_rate=cfg.maintenance_margin_rate
             )
             # Diagnostic maintenance margin at mark
