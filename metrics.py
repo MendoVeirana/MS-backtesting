@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Union
 import numpy as np
 import pandas as pd
 import math
@@ -91,35 +91,27 @@ def var_es(returns: pd.Series, alpha: float = 0.95) -> Tuple[float, float]:
     return var * 100.0, es * 100.0
 
 
-def summarize_performance(perf: pd.DataFrame) -> Dict[str, Any]:
-    if perf.empty:
-        return {}
-    perf = perf.copy()
-    perf['Return'] = perf['Equity_USD'].pct_change()
-    init_eq = perf['Equity_USD'].iloc[0]
-    final_eq = perf['Equity_USD'].iloc[-1]
-    days = (perf['Date'].iloc[-1] - perf['Date'].iloc[0]).days
-    total_ret = (final_eq / init_eq - 1.0) * 100.0 if init_eq > 0 else np.nan
-    cagr = ((final_eq / init_eq) ** (365.0 / days) - 1.0) * 100.0 if days > 0 and init_eq > 0 else np.nan
+def summarize_performance(perf: Union[Dict[str, Any], pd.DataFrame]) -> Dict[str, Any]:
+    """
+    Accepts either:
+      - a dict of metrics (as returned by run_backtest['perf']), or
+      - a one-row DataFrame of metrics.
+    Returns a plain dict of metrics.
+    """
+    if isinstance(perf, dict):
+        return perf
 
-    sr = sharpe_ratio(perf['Return'])
-    sr_adj = adjusted_sharpe_lo(perf['Return'])
-    sortino = sortino_ratio(perf['Return'])
-    max_dd, dd_dur = compute_drawdowns(perf['Equity_USD'])
-    calmar = (cagr / abs(max_dd)) if (not np.isnan(cagr) and max_dd < 0) else np.nan
-    var95, es95 = var_es(perf['Return'], alpha=0.95)
+    if isinstance(perf, pd.DataFrame):
+        if perf.empty:
+            return {}
+        row = perf.iloc[0].to_dict()
+        # sanitize NaN/Inf → None for clean JSON/printing
+        clean = {}
+        for k, v in row.items():
+            if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
+                clean[k] = None
+            else:
+                clean[k] = v
+        return clean
 
-    return {
-        'Initial Equity (USD)': init_eq,
-        'Final Equity (USD)': final_eq,
-        'Total Return (%)': total_ret,
-        'CAGR (%)': cagr,
-        'Sharpe': sr,
-        'Sharpe (Lo-Adj)': sr_adj,
-        'Sortino': sortino,
-        'Max Drawdown (%)': max_dd,
-        'Max DD Duration (days)': dd_dur,
-        'Calmar': calmar,
-        'VaR 95% (1d, %)': var95,
-        'ES 95% (1d, %)': es95,
-    }
+    raise TypeError("perf must be a dict or a pandas DataFrame")

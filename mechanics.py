@@ -2,10 +2,9 @@ import numpy as np
 
 def usd_notional_from_btc_margin(margin_btc: float, price: float, leverage: float) -> float:
     """
-    For inverse coin-M: with BTC margin m, leverage L, and price p, USD contracts Q = m * L * p.
+    Inverse coin-M: with BTC margin m, leverage L, and price p, USD contracts Q = m * L * p.
     """
     return max(0.0, margin_btc) * leverage * price
-
 
 def commission_btc_from_usd(notional_usd: float, price: float, commission_rate: float) -> float:
     """
@@ -13,13 +12,11 @@ def commission_btc_from_usd(notional_usd: float, price: float, commission_rate: 
     """
     return (commission_rate * abs(notional_usd)) / price
 
-
 def funding_btc_from_usd(notional_usd: float, price: float, funding_daily_rate: float) -> float:
     """
     Funding (BTC) for inverse: funding_usd = rate * notional_usd; funding_btc = funding_usd / price.
     """
     return (funding_daily_rate * abs(notional_usd)) / price
-
 
 def avg_entry_inverse_harmonic(q_usd_old: float, entry_old: float,
                                q_usd_add: float, fill_price: float) -> float:
@@ -40,13 +37,15 @@ def liquidation_price_inverse(entry_price: float,
                               wallet_btc_excl_unreal: float,
                               maintenance_margin_rate: float) -> float:
     """
-    Exact inverse (coin-margined) liquidation price:
-        wallet + Q*(1/E - 1/p) = (mm_rate * Q)/p
+    Exact inverse (coin-margined) liquidation price for a long:
+      wallet + Q*(1/E - 1/p) = (mm_rate * Q)/p
       => p_liq = Q * (1 + mm_rate) / (wallet + Q/E)
+
     Inputs:
-      - q_usd: total USD contracts (fixed between trades)
-      - wallet_btc_excl_unreal: isolated wallet for this position EXCLUDING unrealized PnL
-      - maintenance_margin_rate: e.g. 0.004 to 0.006 typical
+    - entry_price: average entry (E)
+    - q_usd: total USD contracts (Q), fixed between trades
+    - wallet_btc_excl_unreal: isolated wallet for this position EXCLUDING unrealized PnL
+    - maintenance_margin_rate: e.g. 0.004 to 0.006 typical
     """
     if q_usd <= 0 or entry_price <= 0:
         return 0.0
@@ -56,43 +55,6 @@ def liquidation_price_inverse(entry_price: float,
     return q_usd * (1.0 + maintenance_margin_rate) / denom_btc
 
 
-def liquidation_price_inverse_isolated(entry_price: float,
-                                       q_usd: float,
-                                       position_wallet_btc_excl_unreal: float,
-                                       maintenance_margin_rate: float) -> float:
-    return liquidation_price_inverse(entry_price, q_usd,
-                                     position_wallet_btc_excl_unreal,
-                                     maintenance_margin_rate)
-
-
-def liquidation_price_coin_m(entry_price: float,
-                             pos_size_btc: float,
-                             wallet_btc_excl_unreal: float,
-                             maintenance_margin_rate: float) -> float:
-    """
-    Simplified coin-margined liquidation price approximation.
-
-    liq = (pos_size * entry_price) / (pos_size + wallet_btc - mm_btc)
-    where mm_btc = pos_size * maintenance_margin_rate
-
-    wallet_btc_excl_unreal: free_margin + spot + pos_margin (i.e., wallet balance in coin, excluding unrealized PnL).
-    """
-    if pos_size_btc <= 0:
-        return 0.0
-    mm_btc = pos_size_btc * maintenance_margin_rate
-    denom = pos_size_btc + wallet_btc_excl_unreal - mm_btc
-    if denom <= 0:
-        return float('inf')
-    return (pos_size_btc * entry_price) / denom
-
-
-def apply_commission_btc(trade_size_btc: float, commission_rate: float) -> float:
-    """
-    Commission for coin-M expressed directly in BTC (rate * trade_size_btc).
-    """
-    return commission_rate * abs(trade_size_btc)
-
-
 def apply_slippage(price: float, slippage_bps: float, buy: bool) -> float:
     """
     Apply slippage in bps to the price.
@@ -100,10 +62,3 @@ def apply_slippage(price: float, slippage_bps: float, buy: bool) -> float:
     """
     adj = price * (slippage_bps * 1e-4)
     return price + (adj if buy else -adj)
-
-
-def max_position_btc(wallet_btc: float, leverage_limit: float) -> float:
-    """
-    Position cap in BTC for coin-M, proportional to wallet BTC.
-    """
-    return max(0.0, wallet_btc * leverage_limit)
