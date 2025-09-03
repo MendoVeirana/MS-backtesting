@@ -94,7 +94,6 @@ def run_backtest(price_df: pd.DataFrame,
                 wallet_btc_excl_unreal=isolated_wallet_btc,  # Key change: isolated W
                 maintenance_margin_rate=cfg.maintenance_margin_rate
             )
-            print('start_liq_price', start_liq_price)  # Now should be higher, closer to entry - entry/lev
 
             in_cycle = True
             starts.append(date)
