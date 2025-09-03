@@ -2,6 +2,11 @@
 
 ## Overview
 A deterministic backtester for coin-margined BTC perpetuals implementing a DCA ladder with explicit perp mechanics (inverse PnL in BTC), funding, fees, and liquidation.
+### Equity Curve and Drawdown
+
+![Equity Curve](equity_curve.png)
+
+(Above: Strategy equity vs. BTC price, with liquidation price, average entry, and cycle markers. Log scale for better visualization of growth.)
 
 ## Data
 - BTC-USD daily OHLC (source: <source>, timezone: <tz>)
