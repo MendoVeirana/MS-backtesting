@@ -94,18 +94,76 @@ def var_es(returns: pd.Series, alpha: float = 0.95) -> Tuple[float, float]:
 def summarize_performance(perf: Union[Dict[str, Any], pd.DataFrame]) -> Dict[str, Any]:
     """
     Accepts either:
-      - a dict of metrics (as returned by run_backtest['perf']), or
-      - a one-row DataFrame of metrics.
+    - a dict of metrics, or
+    - a daily performance DataFrame returned by run_backtest (multi-row, with Equity_USD),
+      or a one-row DataFrame of precomputed metrics.
+
     Returns a plain dict of metrics.
     """
+    # Pass-through if already a metrics dict
     if isinstance(perf, dict):
         return perf
 
-    if isinstance(perf, pd.DataFrame):
-        if perf.empty:
+    if not isinstance(perf, pd.DataFrame):
+        raise TypeError("perf must be a dict or a pandas DataFrame")
+
+    if perf.empty:
+        return {}
+
+    # Case A: daily perf DataFrame (from run_backtest). Compute metrics here.
+    if 'Equity_USD' in perf.columns:
+        df = perf.copy()
+        if 'Date' in df.columns:
+            # ensure proper temporal ordering
+            df = df.sort_values('Date')
+
+        eq = pd.to_numeric(df['Equity_USD'], errors='coerce').dropna()
+        if eq.empty:
             return {}
+
+        # Determine elapsed days using Date if available, else row count
+        if 'Date' in df.columns:
+            start_date = pd.to_datetime(df['Date'].iloc[0])
+            end_date = pd.to_datetime(df['Date'].iloc[-1])
+            days = max((end_date - start_date).days, len(eq) - 1)
+        else:
+            days = max(len(eq) - 1, 1)
+
+        start = float(eq.iloc[0])
+        end = float(eq.iloc[-1])
+
+        # Returns stream
+        r = eq.pct_change().dropna()
+
+        # Total return and CAGR
+        total_ret = (end / start - 1.0) if start > 0 else np.nan
+        years = max(days / 365.0, 1e-9)
+        cagr = (end / start) ** (1.0 / years) - 1.0 if (start > 0 and end > 0) else np.nan
+
+        # Risk metrics
+        sharpe_lo = adjusted_sharpe_lo(r, periods_per_year=365)
+        sharpe = sharpe_ratio(r, periods_per_year=365)
+        sortino = sortino_ratio(r, periods_per_year=365)
+        mdd, dd_days = compute_drawdowns(eq)
+        var95, es95 = var_es(r, alpha=0.95)
+
+        out = {
+            'Final Equity (USD)': end,
+            'Total Return (%)': total_ret * 100.0 if not np.isnan(total_ret) else np.nan,
+            'CAGR (%)': cagr * 100.0 if not np.isnan(cagr) else np.nan,
+            'Sharpe (Lo-Adj)': sharpe_lo if not np.isnan(sharpe_lo) else np.nan,
+            'Sharpe': sharpe if not np.isnan(sharpe) else np.nan,
+            'Sortino': sortino if not np.isnan(sortino) else np.nan,
+            'Max Drawdown (%)': mdd if not np.isnan(mdd) else np.nan,
+            'Longest DD (days)': int(dd_days),
+            'VaR 95% (%)': var95 if not np.isnan(var95) else np.nan,
+            'ES 95% (%)': es95 if not np.isnan(es95) else np.nan,
+        }
+        return out
+
+    # Case B: one-row DataFrame of precomputed metrics -> sanitize and return
+    if len(perf) == 1:
         row = perf.iloc[0].to_dict()
-        # sanitize NaN/Inf → None for clean JSON/printing
         clean = {}
         for k, v in row.items():
             if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
@@ -114,4 +172,5 @@ def summarize_performance(perf: Union[Dict[str, Any], pd.DataFrame]) -> Dict[str
                 clean[k] = v
         return clean
 
-    raise TypeError("perf must be a dict or a pandas DataFrame")
+    # If it's a multi-row DataFrame without Equity_USD, we don't know how to summarize it
+    raise TypeError("DataFrame must be daily perf (with Equity_USD) or a one-row metrics table")

@@ -19,15 +19,15 @@ A deterministic backtester for coin-margined BTC perpetuals implementing a DCA l
 - Open `MS_backtesting.ipynb` and run all cells.
 
 ## Key Results (Summary)
-| Window | CAGR | Sharpe | Sortino | MDD | Calmar | VaR(95%) | ES(95%) |
-|--------|------|--------|---------|-----|--------|----------|---------|
-| IS     |      |        |         |     |        |          |         |
-| OOS    |      |        |         |     |        |          |         |
+| Window | CAGR | Sharpe | Sortino | MDD | VaR(95%) | ES(95%) |
+|--------|------|--------|---------|-----|----------|---------|
+| IS     |  936 |    3   |   4.4   | -49 |   -6.7   |  -10.4  |
+| OOS    |  179 |   1.5  |   2.6   | -38 |   -7.1   |   -9.4  |
 
 (Insert equity curve and drawdown plot here)
 
 ## Limitations
-- Simplified liquidation approximation.
+- Isolated regime
 - Constant funding unless series supplied.
 - Daily bars; no intraday path dependency.
 
